@@ -13,6 +13,7 @@ The current repository layout is split into two top-level apps:
 - Benchmarks and tunes multiple algorithms per tenant.
 - Saves trained models into a tenant-scoped registry.
 - Promotes one model to the canonical active deployment.
+- Generates dense item embeddings during training using a sentence-transformer model and stores them in a tenant-scoped OpenSearch index for content-aware similarity and hybrid scoring.
 - Serves recommendations, similar items, explanations, model listings, jobs, and deployment state through authenticated APIs.
 - Supports SmartDB SQL/NoSQL ingestion helpers and tenant webhooks.
 
@@ -25,6 +26,16 @@ The current repository layout is split into two top-level apps:
 |   |-- api/                       # FastAPI routes, auth, middleware, metering
 |   |-- config/                    # Settings and database config helpers
 |   |-- core/                      # Training, recommendation, deployment, tenants
+|   |   |-- data_processing/
+|   |   |   |-- embedding_enricher.py  # Sentence-transformer encoding + OpenSearch upsert
+|   |   |   |-- data_cleaning.py
+|   |   |   |-- interaction_matrix.py
+|   |   |   |-- dataset_analyzer.py
+|   |   |   `-- feedback_detector.py
+|   |   |-- pipeline/
+|   |   |   |-- training_pipeline.py   # 7-step pipeline 
+|   |   |   `-- serving_pipeline.py    # Hybrid CF + embedding scoring at serve time
+|   |   `-- ...
 |   |-- sdk/                       # Webhook push helpers and JS widget assets
 |   |-- smart_db_csv_builder/      # SmartDB build, schema, connectors, services
 |   |-- static/                    # Swagger UI assets served by FastAPI
@@ -42,6 +53,7 @@ The current repository layout is split into two top-level apps:
 |-- ProactiveAiApiGuide.md
 `-- UserManual.md
 ```
+
 ### Architecture Diagram
 ![Architecture Diagram](docs/architecture.png)
 
@@ -52,6 +64,7 @@ The current repository layout is split into two top-level apps:
 - `backend/api/gateway/` handles auth, tenant state, request metering, and rate limiting.
 - `backend/api/routes/` exposes training, recommendation, models, deployment, jobs, analytics, benchmark, batch, explain, scheduler, and similar-item endpoints.
 - `backend/core/pipeline/` contains training and serving pipeline orchestration.
+- `backend/core/data_processing/embedding_enricher.py` encodes item metadata into dense vectors using a sentence-transformer model and persists them into a per-tenant OpenSearch index. The `EmbeddingStore` handle returned after training exposes `most_similar()`, `score_candidates()`, and `blend_scores()` — the same interface is used at serving time without any in-memory matrix.
 - `backend/core/recommendation/` contains strategy selection, ensemble logic, and runtime inference behavior.
 - `backend/core/deployment/` contains the canonical deployment control plane, active deployment state, event history, and rollback behavior.
 - `backend/core/tenants/` contains tenant config, cache, directories, and request context helpers.
@@ -110,6 +123,37 @@ The recommendation service currently supports:
 
 The response-building logic lives in `backend/core/recommendation/strategy_service.py`.
 
+## Embedding enrichment
+
+Item embedding generation runs as step 5 of 7 in the training pipeline, after the interaction matrix is built and before benchmarking begins. This ordering ensures embeddings are generated only for items that survive data cleaning and have real interactions.
+
+The enricher encodes each item's metadata text (title, overview, genres, keywords, cast, director, or any configured column) using `all-MiniLM-L6-v2` and upserts the resulting vectors into OpenSearch. Each tenant gets an isolated index named `embeddings-{tenant_id}`.
+
+At serving time the `ServingPipeline` attaches the `EmbeddingStore` returned from training. The `similar_items()` endpoint blends collaborative filtering scores with embedding cosine similarity. The `recommend()` endpoint accepts an optional `seed_item_id` to re-rank results using content similarity relative to a reference item.
+
+The embedding step is non-fatal. If OpenSearch is unreachable or the sentence-transformer model fails to load, the pipeline logs a warning and continues to completion using collaborative filtering only.
+
+### Embedding configuration
+
+These settings can be passed in `TrainingConfig` or set via environment variables:
+
+| Setting | Default | Description |
+|---|---|---|
+| `embedding_enabled` | `True` | Set to `False` to skip embedding enrichment entirely |
+| `embedding_model` | `all-MiniLM-L6-v2` | Sentence-transformer model name |
+| `embedding_text_col` | `None` (auto-detect) | Metadata column to embed; auto-detects if not set |
+| `embedding_alpha` | `0.7` | CF weight in hybrid scoring; `1 - alpha` is embedding weight |
+
+### OpenSearch environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENSEARCH_HOST` | `localhost` | OpenSearch host |
+| `OPENSEARCH_PORT` | `9200` | OpenSearch port |
+| `OPENSEARCH_USER` | `admin` | OpenSearch username |
+| `OPENSEARCH_PASSWORD` | `admin` | OpenSearch password |
+| `OPENSEARCH_USE_SSL` | `false` | Set to `true` in production |
+
 ## Local development
 
 ### Backend
@@ -133,6 +177,19 @@ The API will be available at:
 
 - `http://localhost:8000/docs`
 - `http://localhost:8000/health`
+
+### OpenSearch (local)
+
+The embedding enricher requires a running OpenSearch instance. The quickest way to start one locally:
+
+```bash
+docker run -p 9200:9200 -p 9600:9600 \
+  -e "discovery.type=single-node" \
+  -e "plugins.security.disabled=true" \
+  opensearchproject/opensearch:2.13.0
+```
+
+Or use the included `docker-compose.yml` under `backend/` which starts OpenSearch alongside the API.
 
 ### Frontend
 
@@ -225,9 +282,16 @@ curl -X GET http://localhost:8000/models \
 
 1. A tenant calls `POST /train/file` or `POST /train/sql`.
 2. A background job is created and tracked under `/jobs/{job_id}`.
-3. The training pipeline detects columns, profiles feedback mode, cleans data, builds the interaction matrix, benchmarks algorithms, tunes shortlisted models, and saves models into the tenant registry.
+3. The training pipeline runs seven steps:
+   1. Column detection — identifies `userID`, `itemID`, `rating`, and `timestamp` columns automatically.
+   2. Feedback profiling — resolves whether the dataset is implicit, explicit, or hybrid.
+   3. Data cleaning — deduplicates, filters, and splits into train/test sets.
+   4. Interaction matrix — builds the sparse user-item matrix from the cleaned training split.
+   5. Embedding enrichment — encodes item metadata using a sentence-transformer and upserts vectors into the tenant's OpenSearch index.
+   6. Benchmark — evaluates all eligible algorithms against the test split.
+   7. Hyperparameter tuning — runs Optuna on the shortlisted top algorithms.
 4. If auto-promotion is enabled, the top-ranked model is promoted into the deployment control plane.
-5. Recommendation endpoints use the promoted model by default, or explicit model selections depending on strategy.
+5. Recommendation endpoints use the promoted model by default, or explicit model selections depending on strategy. When an `EmbeddingStore` is attached, `similar_items` and `recommend` responses incorporate content-aware hybrid scoring.
 
 ## Configuration notes
 
@@ -250,6 +314,8 @@ There is no committed `.env.example` in the current repository, so create your o
 
 - Backend: Python 3.11+, FastAPI, Pydantic v2, Uvicorn
 - ML/data: NumPy, Pandas, SciPy, scikit-learn, Optuna
+- Embeddings: sentence-transformers (`all-MiniLM-L6-v2`), PyTorch (CPU build)
+- Vector store: OpenSearch 2.x with k-NN plugin (`opensearch-py`)
 - SQL connectors: SQLAlchemy, psycopg2, PyMySQL
 - Frontend: React 18, React Router, Vite, Framer Motion, Recharts
 - Optional services: Redis, RQ, NoSQL connectors
@@ -259,3 +325,4 @@ There is no committed `.env.example` in the current repository, so create your o
 - Production backend routes and functions are now documented with docstrings across the main backend modules.
 - API response shapes are usually assembled in `backend/core/*` service files, while `backend/api/routes/*` mostly handle validation and transport.
 - Tenant data, model files, deployment state, and job state are stored under `backend/tenants/<tenant_id>/`.
+- Embedding vectors are stored in OpenSearch, not on disk. Each tenant's index is named `embeddings-{tenant_id}`. To wipe a tenant's embeddings call `EmbeddingEnricher().delete_tenant_index(tenant_id)`.
