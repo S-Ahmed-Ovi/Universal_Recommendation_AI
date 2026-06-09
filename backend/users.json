@@ -1,0 +1,149 @@
+{
+  "version": 2,
+  "roles": {
+    "USER": {
+      "role": "USER",
+      "label": "User",
+      "description": "Tenant owner with access to their own workspace.",
+      "is_admin": false
+    },
+    "ADMIN": {
+      "role": "ADMIN",
+      "label": "Admin",
+      "description": "Platform administrator with tenant management access.",
+      "is_admin": true
+    }
+  },
+  "users": {
+    "client": {
+      "username": "client",
+      "email": "client@gmail.com",
+      "password_hash": "4d57f8d44308e9fc825e32f26c7ec1e9b81467852a645d63e7a4864a567c996c",
+      "password_salt": "b71550b0b4393caf5ac0b6b8c009cb8b",
+      "role": "USER",
+      "tenant_id": "client001",
+      "created_at": 1780807404.2306664,
+      "updated_at": 1780807425.8419323
+    },
+    "client2": {
+      "username": "client2",
+      "email": "client2@gmail.com",
+      "password_hash": "26cd149ba3557f5928ff27dd839b340fabec601f47b9f213d8e7a67bcabf2be7",
+      "password_salt": "c7d077fa56d884863a53928ff679c1dd",
+      "role": "USER",
+      "tenant_id": "client002",
+      "created_at": 1780849058.0258865,
+      "updated_at": 1780849075.0869725
+    },
+    "client3": {
+      "username": "client3",
+      "email": "client3@gmail.com",
+      "password_hash": "efc44e97c1158e1bdcd0901119d316cc255ae642001ca7d6767122f80cb17788",
+      "password_salt": "0db50d3fb3393496cb2d2056069fcec2",
+      "role": "USER",
+      "tenant_id": "333",
+      "created_at": 1780849865.501792,
+      "updated_at": 1780849910.6778445
+    },
+    "embed": {
+      "username": "embed",
+      "email": "embed@gmail.com",
+      "password_hash": "2f9367c80252fe72e7c177ab82e928644fcf618852fbfbda279cc94ee16c073e",
+      "password_salt": "ee9ec81a0ba9e8c7e0a0918e6ca806a9",
+      "role": "USER",
+      "tenant_id": "embed01",
+      "created_at": 1780850149.0367546,
+      "updated_at": 1780850395.0648434
+    },
+    "hossain": {
+      "username": "hossain",
+      "email": "2125051100@uits.edu.bd",
+      "password_hash": "6d5ee402f918e182d6e45380bacd4814d79a7ee2131ac0dea207410f1f442288",
+      "password_salt": "5f55ffb3c7b02fcba01b66847c4d0bbe",
+      "role": "USER",
+      "tenant_id": "hossain",
+      "created_at": 1780205539.3271215,
+      "updated_at": 1780205584.9541268
+    },
+    "iqbal": {
+      "username": "iqbal",
+      "email": "",
+      "password_hash": "50dd6524dc9228e5dddfac0ca917ec4a51b5ab28ac48067215d4140fbe40b6d8",
+      "password_salt": "94ba445dce234ae923ce510c818919d9",
+      "role": "USER",
+      "tenant_id": "iqbaltest",
+      "created_at": 1780202051.3568127,
+      "updated_at": 1780202094.7626853
+    },
+    "iqbalhossain": {
+      "username": "iqbalhossain",
+      "email": "25ikbalhossain@gmail.com",
+      "password_hash": "2aed5908a2b1ad421ea3ea1d679ede97511776af91ec6d242927b99b0cdcea51",
+      "password_salt": "cc7db329f25fd2e080ff1e3cf6356924",
+      "role": "USER",
+      "tenant_id": "iqbalhossaintest",
+      "created_at": 1780394150.1435251,
+      "updated_at": 1780394173.2185447
+    },
+    "movies": {
+      "username": "movies",
+      "email": "movies@gmail.com",
+      "password_hash": "b74a8215dbe86fb460c9dba47f30f49f834861cf29be121369a9ea7705fa3795",
+      "password_salt": "dd7bc65006ff03b44a3b33b99ba99dd9",
+      "role": "USER",
+      "tenant_id": "movies1",
+      "created_at": 1780905312.8915787,
+      "updated_at": 1780905333.4717844
+    },
+    "movies2": {
+      "username": "movies2",
+      "email": "movies2@gmail.com",
+      "password_hash": "c173ad3151d888c677918374c5a5620448422ee27dd7f40e0b71454fefbb7595",
+      "password_salt": "fea565ef625b78fd5f8f175bc438b917",
+      "role": "USER",
+      "tenant_id": "movies2",
+      "created_at": 1780905671.2456129,
+      "updated_at": 1780905690.2496786
+    },
+    "mygov": {
+      "username": "mygov",
+      "email": "mygov@gmail.com",
+      "password_hash": "886f34b96bd7d2289e6f96cc2d1dc62413159a112cd7bbabb7de9dfff7243d65",
+      "password_salt": "e8d138a77981279f387c05f657acc2f6",
+      "role": "USER",
+      "tenant_id": "mygov",
+      "created_at": 1780468353.9807892,
+      "updated_at": 1780468368.04703
+    },
+    "mygov002": {
+      "username": "mygov002",
+      "email": "mygov002@gmail.com",
+      "password_hash": "8827def8f51fdb4ff4b77809114c377c88c4bc17ce0a1eb4fba4a052c8f91cf2",
+      "password_salt": "3bf2991fff9d4f1cd2f590b7520311fd",
+      "role": "USER",
+      "tenant_id": "002",
+      "created_at": 1780471427.6158433,
+      "updated_at": 1780471445.1523054
+    },
+    "mygov003": {
+      "username": "mygov003",
+      "email": "mygov003@gmail.com",
+      "password_hash": "6a4895baeb660657661234d445c3d0ce004451b728197d70e02277bd101f8f10",
+      "password_salt": "34ad4450dee9fd76c689ef6b189c12fb",
+      "role": "USER",
+      "tenant_id": "003",
+      "created_at": 1780478067.1473477,
+      "updated_at": 1780478286.1664488
+    },
+    "ovi": {
+      "username": "ovi",
+      "email": "ovi@gmail.com",
+      "password_hash": "64a23f9286021cce68199158e1010fa1663e1da7ccfabd534c9608348fcf80af",
+      "password_salt": "8c95693a52720e16c099eba3c23216ca",
+      "role": "USER",
+      "tenant_id": "ovitest",
+      "created_at": 1780292521.9636922,
+      "updated_at": 1780561387.0054998
+    }
+  }
+}

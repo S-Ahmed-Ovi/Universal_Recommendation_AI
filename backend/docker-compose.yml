@@ -1,0 +1,120 @@
+version: "3.9"
+
+# ---------------------------------------------------------------------------
+# Proactive AI v3 – Docker Compose
+#
+# Services:
+#   api     – FastAPI application (main service)
+#   worker  – Background job worker (optional, Redis-backed)
+#   redis   – In-memory store for rate-limiting & job queue (optional)
+#
+# Usage:
+#   Full stack (API + Redis + worker):
+#     docker compose up
+#
+#   API only (no Redis, no worker):
+#     docker compose up api
+#
+#   Production (no hot-reload):
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+# ---------------------------------------------------------------------------
+
+x-common-env: &common-env
+  # Copy from .env.example and customise before running
+  env_file: ../.env
+  environment:
+    - PYTHONUNBUFFERED=1
+    - PYTHONDONTWRITEBYTECODE=1
+
+services:
+
+  # ── API ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: proactive-ai-api
+    <<: *common-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ..:/app                               # hot-reload in dev
+      - tenants_data:/app/backend/tenants     # persistent tenant models & data
+      - model_store:/app/backend/model_store  # v2 back-compat model store
+      - logs:/app/backend/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - proactive-net
+
+  # ── Background worker (Redis-backed, optional) ────────────────────────────
+  worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: proactive-ai-worker
+    <<: *common-env
+    command: ["python", "-m", "rq", "worker", "--with-scheduler", "default"]
+    volumes:
+      - ..:/app
+      - tenants_data:/app/backend/tenants
+      - model_store:/app/backend/model_store
+      - logs:/app/backend/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - worker           # opt-in: docker compose --profile worker up
+    networks:
+      - proactive-net
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: proactive-ai-redis
+    command: >
+      redis-server
+      --requirepass "${REDIS_PASSWORD:-}"
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - proactive-net
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  tenants_data:
+    driver: local
+  model_store:
+    driver: local
+  redis_data:
+    driver: local
+  logs:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  proactive-net:
+    driver: bridge
