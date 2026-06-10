@@ -13,9 +13,9 @@ Desktop.ini
 # ------------------------------
 # Python backend
 # ------------------------------
-__pycache__/
-*.py[cod]
-*$py.class
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
 .python-version
 .pytest_cache/
 .mypy_cache/
@@ -91,3 +91,5 @@ backend/results/
 *.tmp
 *.temp
 
+# Auth / user store
+backend/users.json

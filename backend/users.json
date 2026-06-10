@@ -15,6 +15,16 @@
     }
   },
   "users": {
+    "amazon": {
+      "username": "amazon",
+      "email": "amazon@gmail.com",
+      "password_hash": "104d16dd336fcd2783c6f3ea9ed06e42f53d364ddeebc9ddb68164eb9880a007",
+      "password_salt": "e0563079189917c757943f1dd451053d",
+      "role": "USER",
+      "tenant_id": "amazon1",
+      "created_at": 1781002495.6740856,
+      "updated_at": 1781002511.9242373
+    },
     "client": {
       "username": "client",
       "email": "client@gmail.com",
@@ -154,6 +164,16 @@
       "tenant_id": "ovitest",
       "created_at": 1780292521.9636922,
       "updated_at": 1780561387.0054998
+    },
+    "test01": {
+      "username": "test01",
+      "email": "test@gmail.com",
+      "password_hash": "193f95ffbd66229e4ffb2bf5032283fb32954897a4ffb87ca30b2a9e14224fe4",
+      "password_salt": "dc9bf51439fc859db3413bd32ddc82e3",
+      "role": "USER",
+      "tenant_id": "test01",
+      "created_at": 1781084093.6686807,
+      "updated_at": 1781084110.879549
     }
   }
 }

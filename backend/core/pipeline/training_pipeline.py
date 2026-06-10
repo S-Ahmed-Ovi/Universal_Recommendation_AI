@@ -430,9 +430,10 @@ class TrainingPipeline:
 
         Resolution order:
           1. text_col_hint explicitly set in TrainingConfig → use it directly
-          2. Auto-detect: pick the first string column that looks like free text
-             (high cardinality, average length > 5 chars, not the ID column itself)
-          3. No usable column found → return (None, None) → enricher falls back to item IDs
+          2. Auto-detect: score every string column by (hint_match, item_cardinality, avg_len)
+             and pick the best non-ID candidate.
+          3. Append a secondary keywords/tags column to the chosen text if one exists.
+          4. No usable column found → return (None, None) → enricher falls back to item IDs.
 
         Returns
         -------
@@ -443,9 +444,60 @@ class TrainingPipeline:
         if item_col not in raw_df.columns:
             return None, None
 
-        # Candidate columns: string dtype, not the item/user ID column
-        _TEXT_HINTS = ("title", "name", "description", "desc", "label", "text", "content", "tag", "genre", "category")
+        # ── ID/signal column guard ─────────────────────────────────────────────
+        # Two-tier approach:
+        #   1. Exact blocklist — common ID/signal column names across all domains.
+        #   2. Token subset   — block if every underscore-split token is an ID word.
+        #      This catches multi-part IDs (e.g. "user_event_id") without
+        #      accidentally blocking descriptive names like "event_name" or
+        #      "score_description" (those contain non-ID tokens like "name"/"description").
+        _EXACT_ID_COLS: frozenset = frozenset({
+            # ── user identifiers ──
+            "userid", "user_id", "uid", "user", "customerid", "customer_id",
+            "member_id", "memberid", "account_id", "accountid",
+            # ── item identifiers ──
+            "itemid", "item_id", "iid", "productid", "product_id",
+            "asin", "sku", "upc", "isbn",
+            "movie_id", "movieid", "song_id", "track_id", "book_id",
+            "article_id", "content_id", "listing_id",
+            # ── interaction signals ──
+            "rating", "score", "stars",
+            "timestamp", "ts", "time", "date", "created_at", "updated_at",
+            "price", "cost", "amount", "qty", "quantity",
+            "interaction", "event", "event_type", "action",
+            "click", "purchase", "order", "order_id", "session_id",
+            "lat", "lon", "latitude", "longitude",
+            "id",
+        })
+        _ID_TOKENS: frozenset = frozenset({
+            "userid", "user", "uid", "customerid", "customer",
+            "itemid", "item", "iid", "productid", "product",
+            "rating", "score", "timestamp", "time", "date",
+            "price", "cost", "amount", "qty", "quantity",
+            "interaction", "event", "click", "purchase", "order",
+            "lat", "lon", "latitude", "longitude",
+            "id", "type", "code", "num", "no", "idx", "index",
+            "ts", "at", "on",
+        })
 
+        def _is_id_col(col: str) -> bool:
+            col_norm = col.lower().replace(" ", "_")
+            if col_norm in _EXACT_ID_COLS:
+                return True
+            tokens = {t for t in col_norm.split("_") if t}
+            return bool(tokens) and tokens.issubset(_ID_TOKENS)
+
+        # ── Text-hint vocabulary ───────────────────────────────────────────────
+        # Used to boost columns whose names signal item identity/description.
+        _TEXT_HINTS: tuple[str, ...] = (
+            "title", "name", "description", "desc", "label", "text",
+            "content", "genre", "category", "brand", "summary",
+            "subject", "topic", "synopsis", "overview", "detail",
+            "product", "item", "movie", "book", "song", "track",
+            "artist", "author", "director",
+        )
+
+        # ── Explicit hint from TrainingConfig ──────────────────────────────────
         if text_col_hint:
             if text_col_hint in raw_df.columns:
                 meta = (
@@ -459,26 +511,43 @@ class TrainingPipeline:
                 text_col_hint, list(raw_df.columns),
             )
 
-        # Auto-detect: prefer hint-named columns, then any high-cardinality string col
+        # ── Candidate columns ──────────────────────────────────────────────────
         string_cols = [
             c for c in raw_df.columns
-            if c != item_col and raw_df[c].dtype == object
+            if c != item_col
+            and raw_df[c].dtype == object
+            and not _is_id_col(c)
         ]
-
-        # Score each candidate: hint match > avg text length > cardinality
-        def _score(col: str) -> tuple[int, float]:
-            hint_match = any(h in col.lower() for h in _TEXT_HINTS)
-            sample = raw_df[col].dropna().astype(str).head(500)
-            avg_len = sample.str.len().mean() if len(sample) else 0.0
-            return (int(hint_match), avg_len)
 
         if not string_cols:
             return None, None
 
-        best_col = max(string_cols, key=_score)
-        hint_match, avg_len = _score(best_col)
+        # ── Scoring ────────────────────────────────────────────────────────────
+        # Priority tuple (descending importance):
+        #   1. hint_match   — does the column name suggest item metadata?
+        #   2. cardinality  — item-level unique values (metadata is item-stable,
+        #                     reviews/logs vary per row → penalise high-cardinality)
+        #   3. avg_len      — longer text is generally richer for embeddings
+        #
+        # Cardinality is measured as unique(col) / unique(item_col).
+        # Ideal metadata: ratio ≈ 1.0.  Reviews/logs: ratio >> 1.0.
+        n_items = raw_df[item_col].nunique()
 
-        # Only use the column if it has meaningful text (avg > 3 chars)
+        def _score(col: str) -> tuple[int, float, float]:
+            hint_match  = int(any(h in col.lower() for h in _TEXT_HINTS))
+            sample      = raw_df[col].dropna().astype(str).head(500)
+            avg_len     = float(sample.str.len().mean()) if len(sample) else 0.0
+            # cardinality ratio: lower is better (item-stable columns score higher)
+            n_unique    = raw_df[col].nunique()
+            card_ratio  = n_unique / max(n_items, 1)
+            # invert so that item-stable (ratio≈1) ranks above per-row (ratio>>1)
+            card_score  = 1.0 / (1.0 + abs(card_ratio - 1.0))
+            return (hint_match, card_score, avg_len)
+
+        best_col        = max(string_cols, key=_score)
+        _, _, avg_len   = _score(best_col)
+
+        # Reject if the winner has no meaningful text (e.g. single-char codes)
         if avg_len <= 3:
             return None, None
 
@@ -487,6 +556,36 @@ class TrainingPipeline:
             .rename(columns={item_col: "itemID"})
             .drop_duplicates(subset=["itemID"])
         )
+
+        # ── Optional: append a keywords/tags column ────────────────────────────
+        # Concatenating comma-separated tags to the item text gives the model
+        # richer signal without the noise of free-text reviews.
+        _KW_HINTS = ("keyword", "keywords", "tags", "tag")
+        kw_cols = [
+            c for c in raw_df.columns
+            if c != item_col
+            and c != best_col
+            and raw_df[c].dtype == object
+            and any(h in c.lower() for h in _KW_HINTS)
+        ]
+        if kw_cols:
+            kw_col = kw_cols[0]
+            kw_map: dict[str, str] = (
+                raw_df[[item_col, kw_col]]
+                .drop_duplicates(subset=[item_col])
+                .set_index(item_col)[kw_col]
+                .astype(str)
+                .to_dict()
+            )
+            meta = meta.copy()
+            meta[best_col] = meta.apply(
+                lambda row: (
+                    row[best_col] + " " + kw_map.get(row["itemID"], "")
+                ).strip(),
+                axis=1,
+            )
+            log.info("Enriched embedding text with keywords column '%s'", kw_col)
+
         return meta, best_col
 
     # ── Model persistence ──────────────────────────────────────────────────────

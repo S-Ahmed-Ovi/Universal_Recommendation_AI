@@ -105,7 +105,7 @@ export default function APIPlayground() {
     score: "0",
     strategy: "best_promoted_model",
     topN: 10,
-    userId: "1024",
+    userId: "",
   });
 
   const rowIdRef = useRef(ensembleRows.length);

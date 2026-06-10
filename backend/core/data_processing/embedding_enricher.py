@@ -441,16 +441,20 @@ class EmbeddingEnricher:
                 f"Available: {list(metadata_df.columns)}"
             )
 
-        meta = (
+        meta_series = (
             metadata_df.set_index("itemID")[text_col].astype(str)
             if "itemID" in metadata_df.columns
             else metadata_df[text_col].astype(str)
         )
+        # Convert to plain dict for O(1) scalar lookups — avoids the
+        # ambiguous pd.Series.get() behaviour when the index has duplicates
+        # (it returns a Series instead of a scalar, causing NaN fall-through).
+        meta: dict[str, str] = meta_series.to_dict()
 
         texts, missing = [], 0
         for iid in item_ids:
             text = meta.get(str(iid))
-            if text is None or (isinstance(text, float) and np.isnan(text)):
+            if text is None or text == "nan":
                 texts.append(str(iid))
                 missing += 1
             else:

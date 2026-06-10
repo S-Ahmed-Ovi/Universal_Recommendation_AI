@@ -149,9 +149,15 @@ class ServingPipeline:
             exclude_seen=exclude_seen,
         )
 
-        # Blend with embeddings when a seed item and store are both available
-        if self.embedding_store is not None and seed_item_id is not None:
-            result = self._blend_result(result, seed_item_id, embedding_alpha, top_n)
+        # Blend with embeddings when a store is attached.
+        # If no seed_item_id was given, fall back to the user's most recently
+        # interacted item so embeddings are never silently bypassed.
+        if self.embedding_store is not None:
+            effective_seed = seed_item_id
+            if effective_seed is None:
+                effective_seed = self._last_interacted_item(user_id)
+            if effective_seed is not None:
+                result = self._blend_result(result, effective_seed, embedding_alpha, top_n)
 
         return result
 
@@ -199,16 +205,24 @@ class ServingPipeline:
             # Fast path: use embedding similarity as primary signal
             try:
                 emb_similar = self.embedding_store.most_similar(item_id, k=top_n * 2)
-                # Get CF scores for the same candidates and blend
-                cf_scores = {
-                    iid: score
-                    for iid, score in self._engine.similar_items(
+
+                # Get CF scores for the same candidates and blend.
+                # similar_items returns list[dict] with key 'similarity', not 'score'.
+                cf_scores: dict[str, float] = {}
+                try:
+                    cf_raw = self._engine.similar_items(
                         item_id=item_id, top_n=top_n * 2, algorithm=algorithm
                     )
-                    if isinstance(score, (int, float))
-                } if hasattr(self._engine, "similar_items") else {}
-
-                emb_dict = {iid: score for iid, score in emb_similar}
+                    cf_scores = {
+                        rec["item_id"]: rec.get("similarity", rec.get("score", 0.0))
+                        for rec in cf_raw
+                        if isinstance(rec.get("similarity", rec.get("score")), (int, float))
+                    }
+                except (KeyError, Exception) as cf_err:
+                    log.debug(
+                        "similar_items | CF lookup failed for item '%s': %s — using embeddings only.",
+                        item_id, cf_err,
+                    )
 
                 if cf_scores:
                     blended = self.embedding_store.blend_scores(
@@ -272,6 +286,30 @@ class ServingPipeline:
         }
 
     # ── Internals ──────────────────────────────────────────────────────────────
+
+    def _last_interacted_item(self, user_id: str) -> Optional[str]:
+        """
+        Return the last item this user interacted with from the interaction
+        matrix, to use as an embedding seed when none is explicitly provided.
+        Returns None if the user is unknown or the matrix is unavailable.
+        """
+        try:
+            im = self._engine.im
+            if im is None:
+                return None
+            u_idx = im.user_index.get(str(user_id))
+            if u_idx is None:
+                return None
+            row = im.matrix[u_idx]
+            nonzero_cols = row.nonzero()[1]
+            if len(nonzero_cols) == 0:
+                return None
+            # Pick the item with the highest interaction value as the proxy
+            # for "most recent / strongest signal"
+            best_col = nonzero_cols[int(np.argmax(row[0, nonzero_cols].toarray()))]
+            return im.item_ids[best_col]
+        except Exception:
+            return None
 
     def _blend_result(
         self,
