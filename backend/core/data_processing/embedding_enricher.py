@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODEL  = "all-MiniLM-L6-v2"
 EMBEDDING_DIM  = 384
-INDEX_PREFIX   = "embeddings"
+INDEX_PREFIX   = "proactive-ai"
 BULK_CHUNK     = 500   # documents per bulk upsert batch
 
 
@@ -43,7 +43,7 @@ def _get_client() -> OpenSearch:
     host     = os.environ.get("OPENSEARCH_HOST", "localhost")
     port     = int(os.environ.get("OPENSEARCH_PORT", 9200))
     user     = os.environ.get("OPENSEARCH_USER", "admin")
-    password = os.environ.get("OPENSEARCH_PASSWORD", "admin")
+    password = os.environ.get("OPENSEARCH_PASSWORD", "@Aa1510778084")
     use_ssl  = os.environ.get("OPENSEARCH_USE_SSL", "false").lower() == "true"
 
     return OpenSearch(
