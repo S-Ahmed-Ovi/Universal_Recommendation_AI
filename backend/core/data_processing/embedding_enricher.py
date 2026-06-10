@@ -446,6 +446,11 @@ class EmbeddingEnricher:
             if "itemID" in metadata_df.columns
             else metadata_df[text_col].astype(str)
         )
+        # Normalise the index to str — raw DataFrames may have int/float item IDs
+        # (e.g. MovieLens movieId=1,2,3) while InteractionMatrix.item_ids are always
+        # str after DataCleaner.clean(). Without this cast, every lookup misses and
+        # the enricher silently falls back to embedding bare item ID strings.
+        meta_series.index = meta_series.index.astype(str)
         # Convert to plain dict for O(1) scalar lookups — avoids the
         # ambiguous pd.Series.get() behaviour when the index has duplicates
         # (it returns a Series instead of a scalar, causing NaN fall-through).

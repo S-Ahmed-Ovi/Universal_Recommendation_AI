@@ -504,6 +504,7 @@ class TrainingPipeline:
                     raw_df[[item_col, text_col_hint]]
                     .rename(columns={item_col: "itemID"})
                     .drop_duplicates(subset=["itemID"])
+                    .assign(itemID=lambda df: df["itemID"].astype(str))
                 )
                 return meta, text_col_hint
             log.warning(
@@ -555,6 +556,7 @@ class TrainingPipeline:
             raw_df[[item_col, best_col]]
             .rename(columns={item_col: "itemID"})
             .drop_duplicates(subset=["itemID"])
+            .assign(itemID=lambda df: df["itemID"].astype(str))
         )
 
         # ── Optional: append a keywords/tags column ────────────────────────────
@@ -575,6 +577,7 @@ class TrainingPipeline:
                 .drop_duplicates(subset=[item_col])
                 .set_index(item_col)[kw_col]
                 .astype(str)
+                .pipe(lambda s: s.set_axis(s.index.astype(str)))
                 .to_dict()
             )
             meta = meta.copy()
